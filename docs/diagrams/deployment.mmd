@@ -1,0 +1,25 @@
+graph TB
+    subgraph "Вузол камери"
+        cam_hw["CMOS Сенсор"]
+        analytics["Модуль детекції"]
+        edge_enc["Апаратний кодувальник H.265"]
+        cam_hw --> analytics
+        analytics --> edge_enc
+    end
+
+    subgraph "Сервер оброблення"
+        rtsp_srv["Служба приймання потоку"]
+        ring_buf["Кільцевий буфер (ОЗП)"]
+        webrtc_gw["Шлюз трансляції"]
+        rtsp_srv --> ring_buf
+        ring_buf --> webrtc_gw
+    end
+
+    subgraph "Робоча станція оператора"
+        browser["Вебклієнт / Декодер"]
+        display["Монітор оператора"]
+        browser --> display
+    end
+
+    edge_enc -->|"локальна мережа (SRTP)"| rtsp_srv
+    webrtc_gw -->|"захищений канал (WebRTC/SRTP)"| browser
