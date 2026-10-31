@@ -1,18 +1,22 @@
 graph TB
+    subgraph "Вузол камери"
+        camera["Модуль камери"]
+        detector["Модуль аналітики й детекції"]
+    end
+
     subgraph "Система відеоспостереження"
         ingest["Компонент захоплення"]
-        detector["Модуль аналітики й детекції"]
         streamer["Складник доставляння"]
         buffer["Кільцевий буфер кадрів"]
         recorder["Сервіс запису та архівації"]
-        auth["Модуль авторизації та керування"]
     end
 
-    camera["Камери"] -->|"H.265 / SRTP"| ingest
-    ingest -->|"кадри"| detector
+    client["Клієнт оператора"]
+
+    camera -->|"H.265 / SRTP"| ingest
+    camera -->|"сирі кадри"| detector
     ingest -->|"медіапотік"| buffer
     buffer --> streamer
     buffer --> recorder
     detector -->|"події детекції"| streamer
-    auth -->|"сесії"| streamer
-    streamer -->|"WebRTC / SRTP"| client["Клієнт оператора"]
+    streamer -->|"WebRTC / SRTP"| client
