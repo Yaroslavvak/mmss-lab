@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <title>Адаптивний потік: вимірювання QoE</title>
+  <script src="vendor/hls.min.js"></script>
+  <script src="vendor/dash.all.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; max-width: 900px; }
+    video { width: 100%; background: #000; }
+    td { padding: 2px 12px 2px 0; }
+    pre { background: #f4f6f9; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Адаптивний потік: вимірювання QoE</h1>
+  <p>Профіль мережі: <input id="profile" value="П1" size="6">
+  <button id="start">Старт</button></p>
+  <video id="video" muted playsinline></video>
+  <table>
+    <tr><td>Рівень якості</td><td id="level">-</td></tr>
+    <tr><td>Буфер, с</td><td id="buffer">-</td></tr>
+    <tr><td>Час до початку відтворення, с</td><td id="startup">-</td></tr>
+    <tr><td>Перемикань рівня</td><td id="switches">0</td></tr>
+    <tr><td>Зупинок / тривалість, с</td><td id="stalls">0/0.0</td></tr>
+  </table>
+  <p>Рядок для results/qoe.csv (з'явиться після кінця відтворення):</p>
+  <pre id="result">profile,startup_s,switches,stalls,stall_s,avg_kbps</pre>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const SRC = params.get("src") || "hls/master.m3u8";
+    const video = document.getElementById("video");
+    const $ = id => document.getElementById(id);
+    const m = { t0: 0, startup: null, switches: 0, stalls: 0, stallMs: 0, stallFrom: null, level: null, kbps: 0, played: 0, bits: 0, lastTime: 0 };
+
+    function onLevel(height, kbps) {
+      if (m.level !== null && m.level !== height) m.switches++;
+      m.level = height; m.kbps = kbps;
+      $("level").textContent = `${height}p, ${kbps} кбіт/с`;
+      $("switches").textContent = m.switches;
+    }
+
+    function startHls() {
+      const hls = new Hls();
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_, d) => {
+        const l = hls.levels[d.level];
+        onLevel(l.height, Math.round(l.bitrate / 1000));
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+      hls.loadSource(SRC);
+      hls.attachMedia(video);
+    }
+
+    function startDash() {
+      const player = dashjs.MediaPlayer().create();
+      const events = dashjs.MediaPlayer.events;
+      player.on(events.QUALITY_CHANGE_RENDERED, e => {
+        const r = e.newRepresentation;
+        if (e.mediaType === "video")
+          onLevel(r.height, Math.round(r.bandwidth / 1000));
+      });
+      player.on(events.PLAYBACK_STARTED, () => {
+        const r = player.getCurrentRepresentationForType("video");
+        if (m.level === null && r)
+          onLevel(r.height, Math.round(r.bandwidth / 1000));
+      });
+      player.initialize(video, SRC, true);
+    }
+
+    video.addEventListener("playing", () => {
+      const now = performance.now();
+      if (m.startup === null) {
+        m.startup = (now - m.t0) / 1000;
+        $("startup").textContent = m.startup.toFixed(2);
+      }
+      if (m.stallFrom !== null) {
+        m.stallMs += now - m.stallFrom;
+        m.stallFrom = null;
+      }
+      $("stalls").textContent = `${m.stalls} / ${(m.stallMs / 1000).toFixed(1)}`;
+    });
+
+    video.addEventListener("waiting", () => {
+      if (m.startup !== null && !video.seeking && m.stallFrom === null) {
+        m.stalls++;
+        m.stallFrom = performance.now();
+      }
+    });
+
+    video.addEventListener("timeupdate", () => {
+      const dt = video.currentTime - m.lastTime;
+      if (dt > 0 && dt < 1) { m.played += dt; m.bits += dt * m.kbps; }
+      m.lastTime = video.currentTime;
+      const b = video.buffered;
+      if (b.length) {
+        const ahead = b.end(b.length - 1) - video.currentTime;
+        $("buffer").textContent = ahead.toFixed(1);
+      }
+    });
+
+    video.addEventListener("ended", () => {
+      const row = [$("profile").value, m.startup.toFixed(2), m.switches, m.stalls, (m.stallMs / 1000).toFixed(1), Math.round(m.bits / m.played)];
+      $("result").textContent += "\n" + row.join(",");
+    });
+
+    $("start").onclick = () => {
+      m.t0 = performance.now();
+      SRC.endsWith(".mpd") ? startDash() : startHls();
+    };
+  </script>
+</body>
+</html>
