@@ -1,0 +1,9 @@
+# Заняття 1: лише брокер; у занятті 2 файл буде замінено
+name: mmss
+services:
+  broker:
+    image: eclipse-mosquitto:2
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
