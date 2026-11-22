@@ -1,9 +1,64 @@
-# Заняття 1: лише брокер; у занятті 2 файл буде замінено
+# Розгортання edge-cloud: периферійний і серверний складники
 name: mmss
 services:
-  broker:
+  # --- Периферійний складник: вузол периметра ---
+  edge-broker:
     image: eclipse-mosquitto:2
-    ports:
-      - "127.0.0.1:1883:1883"
     volumes:
       - ./broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks: [edge]
+    cpus: 0.5
+    mem_limit: 128m
+
+  sensors:
+    build: .
+    command: python sensors.py
+    environment:
+      BROKER: edge-broker
+      HZ: ${HZ:-1}
+      DURATION: ${DURATION:-0}
+    volumes:
+      - sensors-data:/app/data  # номер запуску між перезапусками
+    networks: [edge]
+    depends_on: [edge-broker]
+
+  gateway:
+    build: .
+    command: python gateway.py
+    environment:
+      MAX_ROWS: ${MAX_ROWS:-50000}
+      UPLINK_KBPS: ${UPLINK_KBPS:-1000}  # смуга ланки до сервера
+    volumes:
+      - edge-data:/app/data  # буфер на периферії
+    networks: [edge, cloud]  # єдиний зв'язок периферії із сервером
+    cpus: 0.25  # ресурси периферійного вузла обмежені
+    mem_limit: 128m
+    depends_on: [edge-broker, cloud-broker]
+
+  # --- Серверний складник ---
+  cloud-broker:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "127.0.0.1:1883:1883"
+    networks: [cloud]
+
+  collector:
+    build: .
+    command: python collector.py
+    environment:
+      BROKER: cloud-broker
+    volumes:
+      - cloud-data:/app/data  # база телеметрії
+    networks: [cloud]
+    depends_on: [cloud-broker]
+
+networks:
+  edge:
+  cloud:
+
+volumes:
+  sensors-data:
+  edge-data:
+  cloud-data:
